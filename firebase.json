@@ -1,0 +1,33 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "hosting": {
+    "public": "out",
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/posts/*/edit",
+        "destination": "/posts/placeholder/edit.html"
+      },
+      {
+        "source": "/posts/*",
+        "destination": "/posts/placeholder.html"
+      },
+      {
+        "source": "/admin/users/*/edit",
+        "destination": "/admin/users/placeholder/edit.html"
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

@@ -1,0 +1,92 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Helper Functions ---
+    // 書き込みが有効かチェックする関数
+    function writesAllowed() {
+      return get(/databases/$(database)/documents/config/runtime-limits).data.writes_enabled == true;
+    }
+
+    // ユーザーデータを取得する関数
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // 本部管理者かどうかをチェックする関数 (全データへのアクセス権を持つ)
+    function isHqAdmin() {
+      let userData = getUserData();
+      return userData.role == 'admin' && userData.department in ['本部', '地区統括', '商品管理部'];
+    }
+    
+    // 店舗管理者を含む、何らかの管理者権限を持つかチェックする関数
+    function isAdmin() {
+      return getUserData().role == 'admin';
+    }
+
+    // --- Rule Definitions ---
+
+    // キルスイッチの設定ドキュメント
+    match /config/runtime-limits {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ユーザー情報のルール
+    match /users/{userId} {
+      // 読み取り(read): ログイン中の社員であれば許可
+      allow read: if request.auth != null;
+      
+      // 新規作成(create): 認証済みユーザーが自身の情報を作成する場合
+      allow create: if request.auth != null && request.auth.uid == userId;
+      
+      // 更新(update): 本人または本部管理者が、書き込み許可時にのみ更新可能
+      allow update: if request.auth != null && (request.auth.uid == userId || isHqAdmin()) && writesAllowed();
+      
+      // 削除(delete): 本部管理者が、書き込み許可時にのみ削除可能
+      allow delete: if request.auth != null && isHqAdmin() && writesAllowed();
+    }
+
+    // システム設定のルール
+    match /system/settings {
+      allow read: if true;
+      allow write: if request.auth != null && isHqAdmin();
+    }
+
+    // 招待情報のルール
+    match /invitations/{invitationId} {
+      allow read: if true;
+      allow create: if request.auth != null && isHqAdmin();
+      allow delete: if request.auth != null;
+    }
+
+    // 投稿のルール
+    match /posts/{postId} {
+      // 読み取り(read / get / list): ログイン中の社員であれば許可
+      allow read: if request.auth != null;
+
+      // 作成(create): 書き込みが許可されており、かつ管理者権限を持つ場合
+      allow create: if request.auth != null && writesAllowed() && isAdmin();
+
+      // 更新(update): 書き込み許可時に許可 (いいねや既読状態の更新)
+      allow update: if request.auth != null && writesAllowed();
+      
+      // 削除(delete): 投稿者本人または本部管理者が、書き込み許可時にのみ操作可能
+      allow delete: if request.auth != null && (resource.data.authorId == request.auth.uid || isHqAdmin()) && writesAllowed();
+
+      // コメントのルール
+      match /comments/{commentId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null && writesAllowed();
+        allow update, delete: if request.auth != null && (resource.data.authorId == request.auth.uid || isHqAdmin()) && writesAllowed();
+      }
+    }
+    
+    // カウンターのドキュメント
+    match /counters/{docId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+  }
+}
